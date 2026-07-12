@@ -173,6 +173,43 @@ parse_smartctl_info() {
   echo "device_smart_healthy{disk=\"${disk}\",type=\"${disk_type}\",name=\"${name}\"} ${smart_healthy}"
 }
 
+parse_smartctl_info_nvme() {
+    local disk="$1"
+    local disk_type="$2"
+    local name="$3"
+
+    local model='N/A'
+    local serial='N/A'
+    local size='N/A'
+    local fw='N/A'
+    local health=0
+
+    # Get device information
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            Model\ Number:*)
+                model=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
+            Serial\ Number:*)
+                serial=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
+            Namespace\ 1\ Size/Capacity:*)
+                size=$(echo "$line" | cut -d: -f2- | sed 's/ *\[.*//; s/^ *//') ;;
+            Firmware\ Version:*)
+                fw=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
+        esac
+    done < <($SMARTCTL -i -d nvme "${disk}" 2>/dev/null)
+
+    # Check health
+    if $SMARTCTL -H -d nvme "${disk}" 2>/dev/null | grep -q "PASSED"; then
+        health=1
+    fi
+
+    # Output in the same format as other drives (so dashboard works)
+    echo "device_info{disk=\"${disk}\",type=\"${disk_type}\",name=\"${name}\",model_family=\"N/A\",device_model=\"${model}\",serial_number=\"${serial}\",size=\"${size}\",firmware_version=\"${fw}\",smart_healthy=\"${health}\"} 1"
+    echo "device_smart_available{disk=\"${disk}\",type=\"${disk_type}\",name=\"${name}\"} 1"
+    echo "device_smart_enabled{disk=\"${disk}\",type=\"${disk_type}\",name=\"${name}\"} 1"
+    echo "device_smart_healthy{disk=\"${disk}\",type=\"${disk_type}\",name=\"${name}\"} ${health}"
+}
+
 output_format_awk="$(
   cat <<'OUTPUTAWK'
 BEGIN { v = "" }
@@ -241,23 +278,28 @@ for device in ${device_list}; do
     megaraid*)
         $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_scsi_attributes "${disk}" "${type}" "${name}" ;;
     nvme)
-        # === NVMe Support (added for compatibility) ===
-        $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
+        # === Enhanced NVMe Support ===
+        parse_smartctl_info_nvme "${disk}" "${type}" "${name}"
 
-        # Get temperature (NVMe format)
-        temp_line=$($SMARTCTL -A -d nvme "${disk}" 2>/dev/null | grep -i "^Temperature:" | head -1)
-        if [ -n "$temp_line" ]; then
-            temp=$(echo "$temp_line" | awk '{print $2}')
+        # Temperature
+        temp=$(smartctl -A -d nvme "${disk}" 2>/dev/null | grep -i "^Temperature:" | awk '{print $2}')
+        if [ -n "$temp" ]; then
             labels="disk=\"${disk}\",type=\"${type}\",name=\"${name}\""
             echo "temperature_celsius_raw_value{${labels},smart_id=\"194\"} ${temp}"
         fi
 
-        # Get Power On Hours (if available)
-        poh_line=$($SMARTCTL -A -d nvme "${disk}" 2>/dev/null | grep -i "Power On Hours:" | head -1)
-        if [ -n "$poh_line" ]; then
-            poh=$(echo "$poh_line" | awk '{print $4}')
+        # Power On Hours
+        poh=$(smartctl -A -d nvme "${disk}" 2>/dev/null | grep -i "Power On Hours:" | awk '{print $4}')
+        if [ -n "$poh" ]; then
             labels="disk=\"${disk}\",type=\"${type}\",name=\"${name}\""
             echo "power_on_hours_raw_value{${labels},smart_id=\"9\"} ${poh}"
+        fi
+
+        # Percentage Used (very useful for SSDs/NVMe)
+        used=$(smartctl -A -d nvme "${disk}" 2>/dev/null | grep -i "Percentage Used:" | awk '{print $3}' | tr -d '%')
+        if [ -n "$used" ]; then
+            labels="disk=\"${disk}\",type=\"${type}\",name=\"${name}\""
+            echo "percentage_used{${labels}} ${used}"
         fi
         ;;
     *)

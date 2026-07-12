@@ -260,6 +260,8 @@ for device in ${device_list}; do
       vendor=`$SMARTCTL -i -d "${type}" "${disk}" | awk -F ':' '/Vendor/ {print $2}'| sed -E 's/^\s+//g'`
       product=`$SMARTCTL -i -d "${type}" "${disk}" | awk -F ':' '/Product/ {print $2}'| sed -E 's/^\s+//g'`
       name="${vendor} ${product}" ;;
+	nvme)
+	  name=`$SMARTCTL -i -d "${type}" "${disk}" | awk -F ':' '/Model Number/ {print $2}'| sed -E 's/^\s+//g'` ;;
     *)
       name=`$SMARTCTL -i -d "${type}" "${disk}" | awk -F ':' '/Device Model/ {print $2}'| sed -E 's/^\s+//g'` ;;
   esac

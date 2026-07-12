@@ -192,7 +192,8 @@ parse_smartctl_info_nvme() {
             Serial\ Number:*)
                 serial=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
             Namespace\ 1\ Size/Capacity:*)
-                size=$(echo "$line" | cut -d: -f2- | sed 's/ *\[.*//; s/^ *//') ;;
+				raw_size=$(echo "$line" | cut -d: -f2- | sed 's/ *\[.*//; s/^ *//; s/,//g')
+                size=$(echo "$raw_size" | awk '{printf "%d GB", $1/1024/1024/1024}') ;;
             Firmware\ Version:*)
                 fw=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
         esac
@@ -264,7 +265,10 @@ for device in ${device_list}; do
   esac
   echo "smartctl_run{disk=\"${disk}\",type=\"${type}\",name=\"${name}\"}" "$(TZ=UTC date '+%s')"
   # Get the SMART information and health
-  $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
+  # Get the SMART information and health
+  if [[ "$type" != "nvme" ]]; then
+      $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
+  fi
   # Get the SMART attributes
   case ${type} in
     sat)

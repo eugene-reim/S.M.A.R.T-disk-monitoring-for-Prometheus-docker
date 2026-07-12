@@ -230,13 +230,38 @@ for device in ${device_list}; do
   $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
   # Get the SMART attributes
   case ${type} in
-    sat) $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_attributes "${disk}" "${type}" "${name}" ;;
-    atacam) $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_attributes "${disk}" "${type}" "${name}" ;;
-    sat+megaraid*) $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_attributes "${disk}" "${type}" "${name}" ;;
-    scsi) $SMARTCTL -a -d "${type}" "${disk}" | parse_smartctl_scsi_attributes "${disk}" "${type}" "${name}" ;;
-    megaraid*) $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_scsi_attributes "${disk}" "${type}" "${name}" ;;
+    sat)
+        $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_attributes "${disk}" "${type}" "${name}" ;;
+    atacam)
+        $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_attributes "${disk}" "${type}" "${name}" ;;
+    sat+megaraid*)
+        $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_attributes "${disk}" "${type}" "${name}" ;;
+    scsi)
+        $SMARTCTL -a -d "${type}" "${disk}" | parse_smartctl_scsi_attributes "${disk}" "${type}" "${name}" ;;
+    megaraid*)
+        $SMARTCTL -A -d "${type}" "${disk}" | parse_smartctl_scsi_attributes "${disk}" "${type}" "${name}" ;;
+    nvme)
+        # === NVMe Support (added for compatibility) ===
+        $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
+
+        # Get temperature (NVMe format)
+        temp_line=$($SMARTCTL -A -d nvme "${disk}" 2>/dev/null | grep -i "^Temperature:" | head -1)
+        if [ -n "$temp_line" ]; then
+            temp=$(echo "$temp_line" | awk '{print $2}')
+            labels="disk=\"${disk}\",type=\"${type}\",name=\"${name}\""
+            echo "temperature_celsius_raw_value{${labels},smart_id=\"194\"} ${temp}"
+        fi
+
+        # Get Power On Hours (if available)
+        poh_line=$($SMARTCTL -A -d nvme "${disk}" 2>/dev/null | grep -i "Power On Hours:" | head -1)
+        if [ -n "$poh_line" ]; then
+            poh=$(echo "$poh_line" | awk '{print $4}')
+            labels="disk=\"${disk}\",type=\"${type}\",name=\"${name}\""
+            echo "power_on_hours_raw_value{${labels},smart_id=\"9\"} ${poh}"
+        fi
+        ;;
     *)
-      continue
-      ;;
+	  continue
+	  ;;
   esac
 done | format_output

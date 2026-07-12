@@ -264,7 +264,10 @@ for device in ${device_list}; do
   esac
   echo "smartctl_run{disk=\"${disk}\",type=\"${type}\",name=\"${name}\"}" "$(TZ=UTC date '+%s')"
   # Get the SMART information and health
-  $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
+  # Get the SMART information and health
+  if [[ "$type" != "nvme" ]]; then
+      $SMARTCTL -i -H -d "${type}" "${disk}" | parse_smartctl_info "${disk}" "${type}" "${name}"
+  fi
   # Get the SMART attributes
   case ${type} in
     sat)

@@ -1,6 +1,7 @@
-# S.M.A.R.T.-disk-monitoring-for-Prometheus text collector
-
-Prometheus `node_exporter` `text_collector` for S.M.A.R.T disk values
+# S.M.A.R.T.-disk-monitoring-for-Prometheus text collector for docker
+### This is custom version of [olegeech-me/S.M.A.R.T-disk-monitoring-for-Prometheus](https://github.com/olegeech-me/S.M.A.R.T-disk-monitoring-for-Prometheus) with:
+- Docker support
+- NVME drives support
 
 The following dashboards are designed for this exporter:
 
@@ -15,69 +16,52 @@ https://github.com/prometheus/node exporter/tree/master/text collector examples
 - `node_exporter`
   - text collector enabled for node exporter
 - Grafana >= 7.3.6
-- smartmontools >= 7.0
+- Docker
 
 ## Set up
 To enable text collector set the following flag for `node_exporter`:
 - `--collector.textfile.directory=/var/lib/node_exporter/textfile_collector`
 
-To get an up to date version of smartmontools it could be necessary to compile it:
-https://www.smartmontools.org/wiki/Download#Installfromthesourcetarball
+To enable the text collector on your system add the following to docker compose.
+It will execute the script every five minutes and save the result to the `textfile_collector` directory.
 
-- check by executing `smartctl --version`
-
-- make smartmon.sh executable (`chmod +x smartmon.sh`)
-
-- save it under `/usr/local/bin/smartmon.sh`
-
-To enable the text collector on your system add the following as cronjob.
-It will execute the script every five minutes and save the result to the `text_collector` directory.
-
-Example for *UBUNTU* `crontab -e`:
-
-`*/5 * * * * /usr/local/bin/smartmon.sh > /var/lib/node_exporter/textfile_collector/smart_metrics.prom`
-
-Example for *FreeBSD* `crontab -e`:
-
-`*/5 * * * * /usr/local/bin/smartmon.sh > /var/tmp/node_exporter/smart_metrics.prom`
-
-### Number formatting
-
-`smartmon.sh` uses system utilities that by default format numbers according to the localization settings configured for the system.
-
-On systems using locales that format decimal numbers with the comma instead of the dot (e.g. `1,4` instead of `1.4`), node-exporter may fail to parse values, producing a log line such as:
+```yaml
+smartmon-docker:
+  image: ghcr.io/eugene-reim/smartmon-docker:latest
+  container_name: smartmon-docker
+  privileged: true
+  restart: unless-stopped
+  volumes:
+    - ./node-exporter-text-collector-host-path:/var/lib/node_exporter/textfile_collector
+  environment:
+    - SMARTMON_INTERVAL=300
 
 ```
-ts=2022-11-25T11:55:00.384Z caller=textfile.go:227 level=error collector=textfile msg="failed to collect textfile data" file=smart_metrics.prom err="failed to parse textfile data from \"/var/lib/node_exporter/textfile_collector/smart_metrics.prom\": text format parsing error in line 21: expected float as value, got \"0,000000\""
+bind this folder `/var/lib/node_exporter/textfile_collector` to host path where node_exporter is looking for (example `./node-exporter-text-collector-host-path`)
+
+## Example of full installation
+
+```yaml
+node_exporter:
+  image: "docker.io/quay.io/prometheus/node-exporter:latest"
+  container_name: "node_exporter"
+  restart: unless-stopped
+  volumes:
+    - "/:/host:ro"
+    - ./node-exporter-text-collector-host-path:/var/lib/node_exporter/textfile_collector # Mounting smartmon-docker output directory to node_exporter
+  command:
+    - "--path.rootfs=/host"
+    - '--collector.textfile.directory=/var/lib/node_exporter/textfile_collector' # Enabling text collector
+
+smartmon-docker:
+    image: ghcr.io/eugene-reim/smartmon-docker:latest
+    container_name: smartmon-docker
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - ./node-exporter-text-collector-host-path:/var/lib/node_exporter/textfile_collector # Mounting smartmon-docker output directory to host
+    environment:
+      - SMARTMON_INTERVAL=300
+
 ```
-
-This can be fixed in various ways; the easiest one consists of executing the script with the environment variable `LC_NUMERIC=C`:
-
-```shell
-LC_NUMERIC=C /usr/local/bin/smartmon.sh
-```
-
-
-## How to add specific S.M.A.R.T. attributes
-If you are missing some attributes you can extend the text collector.
-Add the desired attributes to `smartmon_attrs` array in `smartmon.sh`.
-
-You get a list of your disks privided attributes by executing:
-`sudo 	smartctl -i -H /dev/<sdx>`
-`sudo 	smartctl -A /dev/<sdx>`
-
-## How to force script to collect information only for the chosen disks
-If you are certain of what disks you want to monitor and you don't want to rely on the smart --scan mechanism,
-you can uncomment and set the `FORCED_DEVICE_LIST` variable:
-```
-FORCED_DEVICE_LIST=$(cat << EOF
-/dev/sg3|scsi
-/dev/sg4|scsi
-/dev/sda|sat
-/dev/sdb|sat
-EOF
-)
-```
-
-Device type can be probed with `smartctl -d test /dev/sdX` command.
 

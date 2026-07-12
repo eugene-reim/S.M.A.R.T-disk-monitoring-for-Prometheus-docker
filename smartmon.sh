@@ -192,7 +192,8 @@ parse_smartctl_info_nvme() {
             Serial\ Number:*)
                 serial=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
             Namespace\ 1\ Size/Capacity:*)
-                size=$(echo "$line" | cut -d: -f2- | sed 's/ *\[.*//; s/^ *//') ;;
+				raw_size=$(echo "$line" | cut -d: -f2- | sed 's/ *\[.*//; s/^ *//; s/,//g')
+                size=$(echo "$raw_size" | awk '{printf "%d GB", $1/1024/1024/1024}') ;;
             Firmware\ Version:*)
                 fw=$(echo "$line" | cut -d: -f2- | sed 's/^ *//') ;;
         esac
